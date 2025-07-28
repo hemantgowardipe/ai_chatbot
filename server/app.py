@@ -13,7 +13,8 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 app = Flask(__name__)
-CORS(app)
+# Allow all origins (you can restrict this later if needed)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # 🧠 Gemini Query Function
 def ask_gemini(prompt):

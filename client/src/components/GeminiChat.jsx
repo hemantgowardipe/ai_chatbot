@@ -45,7 +45,7 @@ const GeminiChat = () => {
         const formData = new FormData();
         formData.append("file", currentFile);
 
-        res = await fetch("http://localhost:5000/summarize", {
+        res = await fetch("https://ai-chatbot-lz10.onrender.com/summarize", {
           method: "POST",
           body: formData,
         });
@@ -61,7 +61,7 @@ const GeminiChat = () => {
 
         setMessages(prev => [...prev, botMessage]);
       } else {
-        res = await fetch("http://localhost:5000/ask", {
+        res = await fetch("https://ai-chatbot-lz10.onrender.com/ask", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
