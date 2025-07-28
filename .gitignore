@@ -1,0 +1,22 @@
+# Root-level
+.env
+.DS_Store
+*.log
+node_modules/
+__pycache__/
+.vscode/
+
+# Client (React)
+client/node_modules/
+client/.env
+client/dist/
+client/build/
+client/.parcel-cache/
+client/.next/
+
+# Server (Flask)
+server/venv/
+server/.env
+server/__pycache__/
+server/instance/
+server/*.pyc
