@@ -28,14 +28,84 @@ const GeminiChat = () => {
   useEffect(() => {
     const loadVoices = () => {
       const voices = speechSynthesis.getVoices();
-      setAvailableVoices(voices);
       
-      // Set default voice (prefer English voices)
-      if (voices.length > 0 && !selectedVoice) {
-        const englishVoice = voices.find(voice => 
-          voice.lang.startsWith('en') && !voice.name.includes('Google')
-        ) || voices.find(voice => voice.lang.startsWith('en')) || voices[0];
-        setSelectedVoice(englishVoice);
+      // Filter for premium quality English and Hindi voices only
+      const premiumVoices = voices.filter(voice => {
+        const lang = voice.lang.toLowerCase();
+        const name = voice.name.toLowerCase();
+        
+        // Premium English voices (UK, US, India)
+        const isEnglishPremium = (
+          (lang.includes('en-us') || lang.includes('en-gb') || lang.includes('en-in') || lang.startsWith('en')) &&
+          (
+            // Prefer natural sounding voices
+            name.includes('natural') ||
+            name.includes('enhanced') ||
+            name.includes('premium') ||
+            name.includes('neural') ||
+            // High quality system voices
+            name.includes('samantha') ||
+            name.includes('alex') ||
+            name.includes('daniel') ||
+            name.includes('karen') ||
+            name.includes('moira') ||
+            name.includes('tessa') ||
+            name.includes('veena') ||
+            name.includes('rishi') ||
+            // Google's high quality voices
+            (name.includes('google') && (name.includes('uk') || name.includes('us') || name.includes('wavenet'))) ||
+            // Microsoft's premium voices
+            (name.includes('microsoft') && (name.includes('aria') || name.includes('guy') || name.includes('jenny'))) ||
+            // Fallback to any English voice if no premium ones found
+            (!voices.some(v => v.name.toLowerCase().includes('natural') || v.name.toLowerCase().includes('enhanced')))
+          )
+        );
+        
+        // Premium Hindi voices
+        const isHindiPremium = (
+          (lang.includes('hi') || lang.includes('hindi')) &&
+          (
+            name.includes('natural') ||
+            name.includes('enhanced') ||
+            name.includes('neural') ||
+            name.includes('wavenet') ||
+            name.includes('lekha') ||
+            name.includes('kalpana') ||
+            lang.includes('hi-in')
+          )
+        );
+        
+        return isEnglishPremium || isHindiPremium;
+      });
+      
+      // Sort voices by quality preference
+      const sortedVoices = premiumVoices.sort((a, b) => {
+        const aName = a.name.toLowerCase();
+        const bName = b.name.toLowerCase();
+        
+        // Priority order: Neural > Natural > Enhanced > Wavenet > Premium > Others
+        const getQualityScore = (name) => {
+          if (name.includes('neural')) return 100;
+          if (name.includes('natural')) return 90;
+          if (name.includes('enhanced')) return 80;
+          if (name.includes('wavenet')) return 70;
+          if (name.includes('premium')) return 60;
+          if (name.includes('google')) return 50;
+          if (name.includes('microsoft')) return 40;
+          return 30;
+        };
+        
+        return getQualityScore(bName) - getQualityScore(aName);
+      });
+      
+      setAvailableVoices(sortedVoices);
+      
+      // Set default voice (prefer the highest quality English voice)
+      if (sortedVoices.length > 0 && !selectedVoice) {
+        const bestEnglishVoice = sortedVoices.find(voice => 
+          voice.lang.toLowerCase().startsWith('en')
+        ) || sortedVoices[0];
+        setSelectedVoice(bestEnglishVoice);
       }
     };
 
@@ -177,6 +247,7 @@ const GeminiChat = () => {
       .replace(/```[\s\S]*?```/g, '') // Remove code blocks
       .replace(/<[^>]*>/g, '') // Remove HTML tags
       .replace(/\n+/g, ' ') // Replace line breaks with spaces
+      .replace(/\s+/g, ' ') // Clean up multiple spaces
       .trim();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -186,9 +257,10 @@ const GeminiChat = () => {
       utterance.voice = selectedVoice;
     }
     
-    utterance.rate = 0.9;
-    utterance.pitch = 1;
-    utterance.volume = 1;
+    // Premium speech settings for natural, refined sound
+    utterance.rate = 0.75; // Slower, more elegant pace
+    utterance.pitch = 0.95; // Slightly lower pitch for sophistication
+    utterance.volume = 0.85; // Gentler volume
 
     utterance.onstart = () => {
       setPlayingMessageId(messageId);
@@ -311,33 +383,61 @@ const GeminiChat = () => {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="p-3 border-b border-gray-100">
-                      <h3 className="text-sm font-medium text-gray-900">Select Voice</h3>
-                      <p className="text-xs text-gray-500 mt-1">Choose how messages sound when read aloud</p>
+                      <h3 className="text-sm font-medium text-gray-900">Premium Voices</h3>
+                      <p className="text-xs text-gray-500 mt-1">High-quality English & Hindi voices</p>
                     </div>
                     <div className="p-2 space-y-1">
-                      {availableVoices.map((voice, index) => (
-                        <button
-                          key={index}
-                          onClick={() => {
-                            setSelectedVoice(voice);
-                            setShowVoiceSelector(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                            selectedVoice?.name === voice.name
-                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                              : 'hover:bg-gray-50 text-gray-700'
-                          }`}
-                        >
-                          <div className="font-medium">{voice.name}</div>
-                          <div className="text-xs text-gray-500">
-                            {voice.lang} • {voice.localService ? 'System' : 'Online'}
-                          </div>
-                        </button>
-                      ))}
+                      {availableVoices.map((voice, index) => {
+                        const isHindi = voice.lang.toLowerCase().includes('hi');
+                        const getVoiceRegion = (voice) => {
+                          const lang = voice.lang.toLowerCase();
+                          if (lang.includes('us')) return '🇺🇸 US';
+                          if (lang.includes('gb') || lang.includes('uk')) return '🇬🇧 UK';
+                          if (lang.includes('in')) return isHindi ? '🇮🇳 Hindi' : '🇮🇳 English (India)';
+                          if (lang.includes('hi')) return '🇮🇳 Hindi';
+                          return '🌐 English';
+                        };
+                        
+                        const getVoiceQuality = (name) => {
+                          const n = name.toLowerCase();
+                          if (n.includes('neural')) return 'Neural';
+                          if (n.includes('natural')) return 'Natural';
+                          if (n.includes('enhanced')) return 'Enhanced';
+                          if (n.includes('wavenet')) return 'WaveNet';
+                          if (n.includes('premium')) return 'Premium';
+                          return 'Standard';
+                        };
+                        
+                        return (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setSelectedVoice(voice);
+                              setShowVoiceSelector(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                              selectedVoice?.name === voice.name
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'hover:bg-gray-50 text-gray-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="font-medium truncate">{voice.name.replace(/^(Microsoft|Google)\s*/i, '')}</div>
+                              <div className="text-xs bg-gray-100 px-2 py-1 rounded-full ml-2 flex-shrink-0">
+                                {getVoiceQuality(voice.name)}
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {getVoiceRegion(voice)} • {voice.localService ? 'System' : 'Cloud'}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                     {availableVoices.length === 0 && (
                       <div className="p-4 text-center text-sm text-gray-500">
-                        No voices available
+                        <div className="mb-2">⏳ Loading premium voices...</div>
+                        <div className="text-xs">Please wait while we find the best quality voices</div>
                       </div>
                     )}
                   </div>
