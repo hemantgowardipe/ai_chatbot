@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Paperclip, Bot, User, Loader2 } from "lucide-react";
+import { Send, Paperclip, Bot, User, Loader2, Volume2, VolumeX, Download, Copy, Check } from "lucide-react";
 // import ReactMarkdown from 'react-markdown'; // Uncomment this line in your project
 
 const GeminiChat = () => {
@@ -7,8 +7,11 @@ const GeminiChat = () => {
   const [messages, setMessages] = useState([]);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [playingMessageId, setPlayingMessageId] = useState(null);
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const speechSynthesisRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -17,6 +20,15 @@ const GeminiChat = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Cleanup speech synthesis on component unmount
+  useEffect(() => {
+    return () => {
+      if (speechSynthesisRef.current) {
+        speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const handleAsk = async () => {
     if (!prompt.trim() && !file) {
@@ -112,18 +124,141 @@ const GeminiChat = () => {
     setFile(null);
   };
 
+  // Text-to-Speech functionality
+  const handlePlaySpeech = (messageId, text) => {
+    // Stop any currently playing speech
+    if (speechSynthesisRef.current) {
+      speechSynthesis.cancel();
+    }
+
+    if (playingMessageId === messageId) {
+      setPlayingMessageId(null);
+      return;
+    }
+
+    // Clean text for speech (remove markdown and HTML)
+    const cleanText = text
+      .replace(/#{1,6}\s+/g, '') // Remove markdown headers
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markdown
+      .replace(/\*(.*?)\*/g, '$1') // Remove italic markdown
+      .replace(/`(.*?)`/g, '$1') // Remove inline code
+      .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/\n+/g, ' ') // Replace line breaks with spaces
+      .trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    utterance.onstart = () => {
+      setPlayingMessageId(messageId);
+    };
+
+    utterance.onend = () => {
+      setPlayingMessageId(null);
+    };
+
+    utterance.onerror = () => {
+      setPlayingMessageId(null);
+    };
+
+    speechSynthesisRef.current = utterance;
+    speechSynthesis.speak(utterance);
+  };
+
+  const handleStopSpeech = () => {
+    speechSynthesis.cancel();
+    setPlayingMessageId(null);
+  };
+
+  // Copy to clipboard functionality
+  const handleCopyText = async (messageId, text) => {
+    try {
+      // Clean text for copying (remove HTML but keep basic formatting)
+      const cleanText = text
+        .replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/g, '$1\n') // Convert headers
+        .replace(/<p[^>]*>(.*?)<\/p>/g, '$1\n') // Convert paragraphs
+        .replace(/<li[^>]*>(.*?)<\/li>/g, '• $1\n') // Convert list items
+        .replace(/<strong[^>]*>(.*?)<\/strong>/g, '**$1**') // Convert bold
+        .replace(/<em[^>]*>(.*?)<\/em>/g, '*$1*') // Convert italic
+        .replace(/<code[^>]*>(.*?)<\/code>/g, '`$1`') // Convert inline code
+        .replace(/<pre[^>]*><code[^>]*>(.*?)<\/code><\/pre>/gs, '```\n$1\n```') // Convert code blocks
+        .replace(/<br>/g, '\n') // Convert line breaks
+        .replace(/<[^>]*>/g, '') // Remove remaining HTML tags
+        .replace(/\n\n+/g, '\n\n') // Clean up multiple line breaks
+        .trim();
+
+      await navigator.clipboard.writeText(cleanText);
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
+  // Download conversation functionality
+  const handleDownloadConversation = () => {
+    const conversationText = messages.map(message => {
+      const role = message.type === 'user' ? 'You' : 'Gemini Assistant';
+      const timestamp = message.timestamp;
+      const fileInfo = message.file ? ` [File: ${message.file}]` : '';
+      
+      // Clean content for download
+      const cleanContent = message.content
+        .replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/g, '$1\n')
+        .replace(/<p[^>]*>(.*?)<\/p>/g, '$1\n')
+        .replace(/<li[^>]*>(.*?)<\/li>/g, '• $1\n')
+        .replace(/<strong[^>]*>(.*?)<\/strong>/g, '**$1**')
+        .replace(/<em[^>]*>(.*?)<\/em>/g, '*$1*')
+        .replace(/<code[^>]*>(.*?)<\/code>/g, '`$1`')
+        .replace(/<pre[^>]*><code[^>]*>(.*?)<\/code><\/pre>/gs, '```\n$1\n```')
+        .replace(/<br>/g, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\n\n+/g, '\n\n')
+        .trim();
+
+      return `[${timestamp}] ${role}${fileInfo}:\n${cleanContent}\n`;
+    }).join('\n---\n\n');
+
+    const blob = new Blob([conversationText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gemini-conversation-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-            <Bot className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+              <Bot className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900">Gemini Assistant</h1>
+              <p className="text-sm text-gray-500">Chat & Document Summarizer</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">Gemini Assistant</h1>
-            <p className="text-sm text-gray-500">Chat & Document Summarizer</p>
-          </div>
+          
+          {/* Download conversation button */}
+          {messages.length > 0 && (
+            <button
+              onClick={handleDownloadConversation}
+              className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Download conversation"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Download</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -161,97 +296,102 @@ const GeminiChat = () => {
                 </div>
 
                 {/* Message Content */}
-                <div className={`px-4 py-3 rounded-2xl ${
-                  message.type === 'user' 
-                    ? 'bg-blue-500 text-white' 
-                    : message.isError
-                      ? 'bg-red-50 text-red-800 border border-red-200'
-                      : 'bg-white text-gray-800 border border-gray-200 shadow-sm'
-                }`}>
-                  {message.file && (
-                    <div className={`text-xs mb-2 flex items-center space-x-1 ${
-                      message.type === 'user' ? 'text-blue-100' : 'text-gray-500'
-                    }`}>
-                      <Paperclip className="w-3 h-3" />
-                      <span>{message.file}</span>
-                    </div>
-                  )}
-                  
-                  {/* Message Content with Markdown Support */}
-                  {message.type === 'bot' ? (
-                    <div className="prose prose-sm max-w-none">
-                      {/* Enhanced markdown parsing for demo - replace with ReactMarkdown in your project */}
-                      <div 
-                        className="text-sm leading-relaxed space-y-2"
-                        dangerouslySetInnerHTML={{
-                          __html: message.content
-                            // Handle headings
-                            .replace(/^### (.*$)/gm, '<h3 class="text-base font-semibold text-gray-900 mt-4 mb-2">$1</h3>')
-                            .replace(/^## (.*$)/gm, '<h2 class="text-lg font-semibold text-gray-900 mt-4 mb-2">$1</h2>')
-                            .replace(/^# (.*$)/gm, '<h1 class="text-xl font-semibold text-gray-900 mt-4 mb-2">$1</h1>')
-                            
-                            // Handle numbered lists
-                            .replace(/^\d+\.\s+(.*)$/gm, '<li class="ml-4 mb-1">$1</li>')
-                            
-                            // Handle bullet points
-                            .replace(/^\*\s+(.*)$/gm, '<li class="ml-4 mb-1 list-disc">$1</li>')
-                            .replace(/^-\s+(.*)$/gm, '<li class="ml-4 mb-1 list-disc">$1</li>')
-                            
-                            // Handle bold and italic
-                            .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
-                            .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
-                            
-                            // Handle inline code
-                            .replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">$1</code>')
-                            
-                            // Handle code blocks
-                            .replace(/```([\s\S]*?)```/g, '<pre class="bg-gray-100 p-3 rounded mt-3 mb-3 text-xs overflow-x-auto font-mono"><code>$1</code></pre>')
-                            
-                            // Handle line breaks
-                            .replace(/\n\n/g, '</p><p class="mt-2">')
-                            .replace(/\n/g, '<br>')
-                            
-                            // Wrap in paragraph if not already wrapped
-                            .replace(/^(?!<[h1-6|li|pre|div])(.+)/gm, '<p>$1</p>')
-                        }}
-                      />
-                      {/* In your project, replace the above div with ReactMarkdown: */}
-                      {/* 
-                      <ReactMarkdown 
-                        className="text-sm leading-relaxed"
-                        components={{
-                          h1: ({children}) => <h1 className="text-xl font-semibold text-gray-900 mt-4 mb-2">{children}</h1>,
-                          h2: ({children}) => <h2 className="text-lg font-semibold text-gray-900 mt-4 mb-2">{children}</h2>,
-                          h3: ({children}) => <h3 className="text-base font-semibold text-gray-900 mt-4 mb-2">{children}</h3>,
-                          p: ({children}) => <p className="mb-2">{children}</p>,
-                          strong: ({children}) => <strong className="font-semibold">{children}</strong>,
-                          em: ({children}) => <em className="italic">{children}</em>,
-                          ul: ({children}) => <ul className="list-disc ml-4 mb-2 space-y-1">{children}</ul>,
-                          ol: ({children}) => <ol className="list-decimal ml-4 mb-2 space-y-1">{children}</ol>,
-                          li: ({children}) => <li className="mb-1">{children}</li>,
-                          code: ({node, inline, className, children, ...props}) => (
-                            inline ? 
-                            <code className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono" {...props}>
-                              {children}
-                            </code> :
-                            <pre className="bg-gray-100 p-3 rounded mt-3 mb-3 text-xs overflow-x-auto">
-                              <code className="font-mono" {...props}>{children}</code>
-                            </pre>
-                          )
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown> 
-                      */}
-                    </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</p>
-                  )}
-                  <div className={`text-xs mt-2 ${
-                    message.type === 'user' ? 'text-blue-100' : 'text-gray-400'
+                <div className="relative group">
+                  <div className={`px-4 py-3 rounded-2xl ${
+                    message.type === 'user' 
+                      ? 'bg-blue-500 text-white' 
+                      : message.isError
+                        ? 'bg-red-50 text-red-800 border border-red-200'
+                        : 'bg-white text-gray-800 border border-gray-200 shadow-sm'
                   }`}>
-                    {message.timestamp}
+                    {message.file && (
+                      <div className={`text-xs mb-2 flex items-center space-x-1 ${
+                        message.type === 'user' ? 'text-blue-100' : 'text-gray-500'
+                      }`}>
+                        <Paperclip className="w-3 h-3" />
+                        <span>{message.file}</span>
+                      </div>
+                    )}
+                    
+                    {/* Message Content with Markdown Support */}
+                    {message.type === 'bot' ? (
+                      <div className="prose prose-sm max-w-none">
+                        {/* Enhanced markdown parsing for demo - replace with ReactMarkdown in your project */}
+                        <div 
+                          className="text-sm leading-relaxed space-y-2"
+                          dangerouslySetInnerHTML={{
+                            __html: message.content
+                              // Handle headings
+                              .replace(/^### (.*$)/gm, '<h3 class="text-base font-semibold text-gray-900 mt-4 mb-2">$1</h3>')
+                              .replace(/^## (.*$)/gm, '<h2 class="text-lg font-semibold text-gray-900 mt-4 mb-2">$1</h2>')
+                              .replace(/^# (.*$)/gm, '<h1 class="text-xl font-semibold text-gray-900 mt-4 mb-2">$1</h1>')
+                              
+                              // Handle numbered lists
+                              .replace(/^\d+\.\s+(.*)$/gm, '<li class="ml-4 mb-1">$1</li>')
+                              
+                              // Handle bullet points
+                              .replace(/^\*\s+(.*)$/gm, '<li class="ml-4 mb-1 list-disc">$1</li>')
+                              .replace(/^-\s+(.*)$/gm, '<li class="ml-4 mb-1 list-disc">$1</li>')
+                              
+                              // Handle bold and italic
+                              .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+                              .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+                              
+                              // Handle inline code
+                              .replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">$1</code>')
+                              
+                              // Handle code blocks
+                              .replace(/```([\s\S]*?)```/g, '<pre class="bg-gray-100 p-3 rounded mt-3 mb-3 text-xs overflow-x-auto font-mono"><code>$1</code></pre>')
+                              
+                              // Handle line breaks
+                              .replace(/\n\n/g, '</p><p class="mt-2">')
+                              .replace(/\n/g, '<br>')
+                              
+                              // Wrap in paragraph if not already wrapped
+                              .replace(/^(?!<[h1-6|li|pre|div])(.+)/gm, '<p>$1</p>')
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</p>
+                    )}
+                    <div className={`text-xs mt-2 ${
+                      message.type === 'user' ? 'text-blue-100' : 'text-gray-400'
+                    }`}>
+                      {message.timestamp}
+                    </div>
                   </div>
+
+                  {/* Action buttons for bot messages */}
+                  {message.type === 'bot' && !message.isError && (
+                    <div className={`absolute ${message.type === 'user' ? 'left-0' : 'right-0'} top-0 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity -mt-2 ${message.type === 'user' ? '-ml-16' : '-mr-16'}`}>
+                      {/* Listen/Stop button */}
+                      <button
+                        onClick={() => playingMessageId === message.id ? handleStopSpeech() : handlePlaySpeech(message.id, message.content)}
+                        className="w-8 h-8 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 transition-colors"
+                        title={playingMessageId === message.id ? "Stop listening" : "Listen to message"}
+                      >
+                        {playingMessageId === message.id ? (
+                          <VolumeX className="w-4 h-4 text-gray-600" />
+                        ) : (
+                          <Volume2 className="w-4 h-4 text-gray-600" />
+                        )}
+                      </button>
+
+                      {/* Copy button */}
+                      <button
+                        onClick={() => handleCopyText(message.id, message.content)}
+                        className="w-8 h-8 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 transition-colors"
+                        title="Copy message"
+                      >
+                        {copiedMessageId === message.id ? (
+                          <Check className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <Copy className="w-4 h-4 text-gray-600" />
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
