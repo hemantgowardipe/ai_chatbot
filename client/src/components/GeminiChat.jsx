@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Paperclip, Bot, User, Loader2, Volume2, VolumeX, Download, Copy, Check } from "lucide-react";
+import { Send, Paperclip, Bot, User, Loader2, Volume2, VolumeX, Download, Copy, Check, Settings, ChevronDown } from "lucide-react";
 // import ReactMarkdown from 'react-markdown'; // Uncomment this line in your project
 
 const GeminiChat = () => {
@@ -9,6 +9,9 @@ const GeminiChat = () => {
   const [loading, setLoading] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState(null);
   const [copiedMessageId, setCopiedMessageId] = useState(null);
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [selectedVoice, setSelectedVoice] = useState(null);
+  const [showVoiceSelector, setShowVoiceSelector] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const speechSynthesisRef = useRef(null);
@@ -20,6 +23,35 @@ const GeminiChat = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Load available voices
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = speechSynthesis.getVoices();
+      setAvailableVoices(voices);
+      
+      // Set default voice (prefer English voices)
+      if (voices.length > 0 && !selectedVoice) {
+        const englishVoice = voices.find(voice => 
+          voice.lang.startsWith('en') && !voice.name.includes('Google')
+        ) || voices.find(voice => voice.lang.startsWith('en')) || voices[0];
+        setSelectedVoice(englishVoice);
+      }
+    };
+
+    loadVoices();
+    
+    // Some browsers load voices asynchronously
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    return () => {
+      if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, [selectedVoice]);
 
   // Cleanup speech synthesis on component unmount
   useEffect(() => {
@@ -148,6 +180,12 @@ const GeminiChat = () => {
       .trim();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
+    
+    // Apply selected voice
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+    
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -234,7 +272,7 @@ const GeminiChat = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-gray-50" onClick={() => setShowVoiceSelector(false)}>
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
         <div className="flex items-center justify-between">
@@ -248,16 +286,74 @@ const GeminiChat = () => {
             </div>
           </div>
           
-          {/* Download conversation button */}
+          {/* Download conversation and voice settings buttons */}
           {messages.length > 0 && (
-            <button
-              onClick={handleDownloadConversation}
-              className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Download conversation"
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Download</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {/* Voice Settings */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowVoiceSelector(!showVoiceSelector);
+                  }}
+                  className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Voice settings"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span className="hidden sm:inline">Voice</span>
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showVoiceSelector ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Voice Selector Dropdown */}
+                {showVoiceSelector && (
+                  <div 
+                    className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="p-3 border-b border-gray-100">
+                      <h3 className="text-sm font-medium text-gray-900">Select Voice</h3>
+                      <p className="text-xs text-gray-500 mt-1">Choose how messages sound when read aloud</p>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      {availableVoices.map((voice, index) => (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            setSelectedVoice(voice);
+                            setShowVoiceSelector(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                            selectedVoice?.name === voice.name
+                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                              : 'hover:bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          <div className="font-medium">{voice.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {voice.lang} • {voice.localService ? 'System' : 'Online'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    {availableVoices.length === 0 && (
+                      <div className="p-4 text-center text-sm text-gray-500">
+                        No voices available
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Download button */}
+              <button
+                onClick={handleDownloadConversation}
+                className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Download conversation"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Download</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
