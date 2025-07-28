@@ -25,6 +25,10 @@ def ask_gemini(prompt):
         print("Gemini Error:", e)
         return "An error occurred while querying Gemini."
 
+@app.route('/')
+def index():
+    return {'message': 'AI Chatbot Backend is running 🚀'}
+
 # ✨ Route: Ask Gemini via GET/POST prompt
 @app.route("/ask", methods=["GET", "POST"])
 def ask():

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000',
+  baseURL: 'https://ai-chatbot-lz10.onrender.com', // Live backend URL
 });
 
 export const askAI = async (question, context = '') => {
